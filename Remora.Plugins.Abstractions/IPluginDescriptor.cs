@@ -63,5 +63,6 @@ public interface IPluginDescriptor
     /// <param name="serviceProvider">The service provider.</param>
     /// <param name="ct">The cancellation token for this operation.</param>
     /// <returns>A result that may or may not have succeeded.</returns>
+    [Obsolete("Use parameterized constructor.", error: true)]
     ValueTask<Result> InitializeAsync(IServiceProvider serviceProvider, CancellationToken ct = default);
 }
