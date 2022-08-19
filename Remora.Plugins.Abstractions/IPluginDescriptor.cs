@@ -33,7 +33,7 @@ namespace Remora.Plugins.Abstractions;
 /// Represents the public API for a plugin.
 /// </summary>
 [PublicAPI]
-public interface IPluginDescriptor
+public interface IPluginDescriptor : IDisposable, IAsyncDisposable
 {
     /// <summary>
     /// Gets the name of the plugin. This name should be unique.
@@ -51,18 +51,21 @@ public interface IPluginDescriptor
     Version Version { get; }
 
     /// <summary>
-    /// Configures services provided by the plugin in the application's service collection.
+    /// Performs any startup required by the plugin.
     /// </summary>
-    /// <param name="serviceCollection">The service collection.</param>
-    /// <returns>A result that may or may not have succeeded.</returns>
-    Result ConfigureServices(IServiceCollection serviceCollection);
-
-    /// <summary>
-    /// Performs any post-registration initialization required by the plugin.
-    /// </summary>
-    /// <param name="serviceProvider">The service provider.</param>
     /// <param name="ct">The cancellation token for this operation.</param>
     /// <returns>A result that may or may not have succeeded.</returns>
-    [Obsolete("Use parameterized constructor.", error: true)]
-    ValueTask<Result> InitializeAsync(IServiceProvider serviceProvider, CancellationToken ct = default);
+    ValueTask<Result> StartupAsync(CancellationToken ct = default);
+
+    /// <summary>
+    /// Performs any shutdown tasks required by the plugin.
+    /// </summary>
+    /// <remarks>
+    /// This method may be called at any time and should handle setting up the
+    /// plugin for either shutting down or restarting.
+    /// </remarks>
+    /// <param name="shutdown"><see langword="true"/> if the host is shutting down; otherwise, <see langword="false"/>.</param>
+    /// <param name="ct">The cancellation token for this operation.</param>
+    /// <returns>A result that may or may not have succeeded. A failed shutdown will terminate the host.</returns>
+    ValueTask<Result> ShutdownAsync(bool shutdown = false, CancellationToken ct = default);
 }

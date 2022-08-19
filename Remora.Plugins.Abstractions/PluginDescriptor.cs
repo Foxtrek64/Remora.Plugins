@@ -25,7 +25,6 @@ using System.Reflection;
 using System.Threading;
 using System.Threading.Tasks;
 using JetBrains.Annotations;
-using Microsoft.Extensions.DependencyInjection;
 using Remora.Results;
 
 namespace Remora.Plugins.Abstractions;
@@ -36,6 +35,8 @@ namespace Remora.Plugins.Abstractions;
 [PublicAPI]
 public abstract class PluginDescriptor : IPluginDescriptor
 {
+    private bool _isDisposed = false;
+
     /// <inheritdoc />
     public abstract string Name { get; }
 
@@ -46,13 +47,13 @@ public abstract class PluginDescriptor : IPluginDescriptor
     public virtual Version Version => Assembly.GetAssembly(GetType())?.GetName().Version ?? new Version(1, 0, 0);
 
     /// <inheritdoc />
-    public virtual Result ConfigureServices(IServiceCollection serviceCollection)
+    public virtual ValueTask<Result> StartupAsync(CancellationToken ct = default)
     {
-        return Result.FromSuccess();
+        return new(Result.FromSuccess());
     }
 
     /// <inheritdoc />
-    public virtual ValueTask<Result> InitializeAsync(IServiceProvider serviceProvider, CancellationToken ct = default)
+    public virtual ValueTask<Result> ShutdownAsync(bool shutdown = false, CancellationToken ct = default)
     {
         return new(Result.FromSuccess());
     }
@@ -61,5 +62,50 @@ public abstract class PluginDescriptor : IPluginDescriptor
     public sealed override string ToString()
     {
         return this.Name;
+    }
+
+    /// <inheritdoc/>
+    public void Dispose()
+    {
+        if (this._isDisposed)
+        {
+            return;
+        }
+
+        Dispose(disposing: true);
+        this._isDisposed = true;
+        GC.SuppressFinalize(this);
+    }
+
+    /// <inheritdoc/>
+    public async ValueTask DisposeAsync()
+    {
+        if (this._isDisposed)
+        {
+            return;
+        }
+
+        // Perform async cleanup.
+        await DisposeAsyncCore();
+
+        // Dispose of unmanaged resources.
+        Dispose(disposing: false);
+
+        this._isDisposed = true;
+
+        // Suppress finalization
+        GC.SuppressFinalize(this);
+    }
+
+    /// <inheritdoc cref="Dispose()"/>
+    /// <param name="disposing">A value indicating whether to dispose managed resources.</param>
+    protected virtual void Dispose(bool disposing)
+    {
+    }
+
+    /// <inheritdoc cref="DisposeAsync()"/>
+    protected virtual ValueTask DisposeAsyncCore()
+    {
+        return default;
     }
 }
