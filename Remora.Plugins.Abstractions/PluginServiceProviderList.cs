@@ -22,6 +22,7 @@
 
 using System;
 using System.Collections.Generic;
+using System.Linq;
 using JetBrains.Annotations;
 using Microsoft.Extensions.DependencyInjection;
 
@@ -96,13 +97,8 @@ public class PluginServiceProviderList
     public TService? GetService<TService>()
     {
         TService? result = default;
-        foreach (var provider in _serviceProviders.Values)
+        foreach (var provider in _serviceProviders.Values.TakeWhile(_ => result == null))
         {
-            if (result != null)
-            {
-                break;
-            }
-
             result = provider.GetService<TService>();
         }
 
