@@ -51,11 +51,9 @@ public interface IPluginDescriptor
     Version Version { get; }
 
     /// <summary>
-    /// Configures services provided by the plugin in the application's service collection.
+    /// Gets the services of the plugin.
     /// </summary>
-    /// <param name="serviceCollection">The service collection.</param>
-    /// <returns>A result that may or may not have succeeded.</returns>
-    Result ConfigureServices(IServiceCollection serviceCollection);
+    IServiceCollection Services { get; }
 
     /// <summary>
     /// Called when the application host is ready to start the plugin.

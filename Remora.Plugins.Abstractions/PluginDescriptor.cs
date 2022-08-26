@@ -43,13 +43,10 @@ public abstract class PluginDescriptor : IPluginDescriptor, IDisposable, IAsyncD
     public abstract string Description { get; }
 
     /// <inheritdoc />
-    public virtual Version Version => Assembly.GetAssembly(GetType())?.GetName().Version ?? new Version(1, 0, 0);
+    public abstract IServiceCollection Services { get; }
 
     /// <inheritdoc />
-    public virtual Result ConfigureServices(IServiceCollection serviceCollection)
-    {
-        return Result.FromSuccess();
-    }
+    public virtual Version Version => Assembly.GetAssembly(GetType())?.GetName().Version ?? new Version(1, 0, 0);
 
     /// <inheritdoc/>
     public abstract Task<Result> StartAsync(CancellationToken ct = default);

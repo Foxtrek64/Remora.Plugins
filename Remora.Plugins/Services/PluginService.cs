@@ -198,6 +198,7 @@ public sealed class PluginService
     /// <param name="assembly">The assembly.</param>
     /// <returns>The plugin descriptor.</returns>
     [Pure]
+    [Obsolete("Plugin trees aren't used anymore.")]
     private static Result<IPluginDescriptor> LoadPluginDescriptor(Assembly assembly)
     {
         var pluginAttribute = assembly.GetCustomAttribute<RemoraPluginAttribute>();
