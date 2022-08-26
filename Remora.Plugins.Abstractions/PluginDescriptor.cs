@@ -34,7 +34,7 @@ namespace Remora.Plugins.Abstractions;
 /// Acts as a base class for plugin descriptors.
 /// </summary>
 [PublicAPI]
-public abstract class PluginDescriptor : IPluginDescriptor, IDisposable, IAsyncDisposable
+public abstract class PluginDescriptor : IPluginDescriptor
 {
     /// <inheritdoc />
     public abstract string Name { get; }

@@ -33,7 +33,7 @@ namespace Remora.Plugins.Abstractions;
 /// Represents the public API for a plugin.
 /// </summary>
 [PublicAPI]
-public interface IPluginDescriptor
+public interface IPluginDescriptor : IDisposable, IAsyncDisposable
 {
     /// <summary>
     /// Gets the name of the plugin. This name should be unique.
