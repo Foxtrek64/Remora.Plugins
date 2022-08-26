@@ -20,6 +20,7 @@
 //  along with this program.  If not, see <http://www.gnu.org/licenses/>.
 //
 
+using System;
 using System.Collections.Generic;
 using System.Linq;
 using JetBrains.Annotations;
@@ -31,6 +32,7 @@ namespace Remora.Plugins;
 /// Represents a node in a dependency tree.
 /// </summary>
 [PublicAPI]
+[Obsolete("We are doing away with the tree.")]
 public sealed class PluginTreeNode
 {
     private readonly List<PluginTreeNode> _dependents;

@@ -34,7 +34,7 @@ namespace Remora.Plugins.Abstractions;
 /// Acts as a base class for plugin descriptors.
 /// </summary>
 [PublicAPI]
-public abstract class PluginDescriptor : IPluginDescriptor
+public abstract class PluginDescriptor : IPluginDescriptor, IDisposable, IAsyncDisposable
 {
     /// <inheritdoc />
     public abstract string Name { get; }
@@ -51,15 +51,48 @@ public abstract class PluginDescriptor : IPluginDescriptor
         return Result.FromSuccess();
     }
 
-    /// <inheritdoc />
-    public virtual ValueTask<Result> InitializeAsync(IServiceProvider serviceProvider, CancellationToken ct = default)
-    {
-        return new(Result.FromSuccess());
-    }
+    /// <inheritdoc/>
+    public abstract Task<Result> StartAsync(CancellationToken ct = default);
+
+    /// <inheritdoc/>
+    public abstract Task StopAsync(CancellationToken ct = default);
 
     /// <inheritdoc/>
     public sealed override string ToString()
     {
-        return this.Name;
+        return Name;
+    }
+
+    /// <inheritdoc/>
+    public void Dispose()
+    {
+        GC.SuppressFinalize(this);
+        DisposePlugin(disposing: true);
+    }
+
+    /// <inheritdoc/>
+    public async ValueTask DisposeAsync()
+    {
+        GC.SuppressFinalize(this);
+
+        await DisposePluginAsync().ConfigureAwait(false);
+        DisposePlugin(disposing: false);
+    }
+
+    /// <summary>
+    /// Called when the plugin is being disposed.
+    /// </summary>
+    /// <param name="disposing">
+    /// <see langword="true"/> if the method was called from the <see cref="Dispose()"/> method; otherwise, <see langword="false"/>.
+    /// </param>
+    protected abstract void DisposePlugin(bool disposing);
+
+    /// <summary>
+    /// Called when the plugin is being disposed asynchronously.
+    /// </summary>
+    /// <returns>A ValueTask indicating the result of the operation.</returns>
+    protected virtual ValueTask DisposePluginAsync()
+    {
+        return default;
     }
 }

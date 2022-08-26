@@ -58,10 +58,16 @@ public interface IPluginDescriptor
     Result ConfigureServices(IServiceCollection serviceCollection);
 
     /// <summary>
-    /// Performs any post-registration initialization required by the plugin.
+    /// Called when the application host is ready to start the plugin.
     /// </summary>
-    /// <param name="serviceProvider">The service provider.</param>
-    /// <param name="ct">The cancellation token for this operation.</param>
+    /// <param name="ct">Indicates that the start process has been aborted.</param>
     /// <returns>A result that may or may not have succeeded.</returns>
-    ValueTask<Result> InitializeAsync(IServiceProvider serviceProvider, CancellationToken ct = default);
+    Task<Result> StartAsync(CancellationToken ct = default);
+
+    /// <summary>
+    /// Called when the application host is ready to stop the plugin.
+    /// </summary>
+    /// <param name="ct">Indicates tha the shutdown process should no longer be graceful.</param>
+    /// <returns>A task representing the asynchronous operation.</returns>
+    Task StopAsync(CancellationToken ct = default);
 }

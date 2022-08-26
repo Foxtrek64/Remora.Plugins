@@ -1,5 +1,5 @@
 //
-//  RemoraPlugin.cs
+//  RemoraPluginAttribute.cs
 //
 //  Author:
 //       Jarl Gullberg <jarl.gullberg@gmail.com>
@@ -31,7 +31,7 @@ namespace Remora.Plugins.Abstractions.Attributes;
 /// </summary>
 [PublicAPI]
 [AttributeUsage(AttributeTargets.Assembly)]
-public sealed class RemoraPlugin : Attribute
+public sealed class RemoraPluginAttribute : Attribute
 {
     /// <summary>
     /// Gets the plugin descriptor that the assembly exports.
@@ -39,10 +39,10 @@ public sealed class RemoraPlugin : Attribute
     public Type PluginDescriptor { get; }
 
     /// <summary>
-    /// Initializes a new instance of the <see cref="RemoraPlugin"/> class.
+    /// Initializes a new instance of the <see cref="RemoraPluginAttribute"/> class.
     /// </summary>
     /// <param name="pluginDescriptor">The descriptor type.</param>
-    public RemoraPlugin(Type pluginDescriptor)
+    public RemoraPluginAttribute(Type pluginDescriptor)
     {
         this.PluginDescriptor = pluginDescriptor;
     }

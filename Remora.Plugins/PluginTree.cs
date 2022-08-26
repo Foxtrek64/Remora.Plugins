@@ -38,6 +38,7 @@ namespace Remora.Plugins;
 /// Represents a tree of plugins, ordered by their dependencies.
 /// </summary>
 [PublicAPI]
+[Obsolete("We are doing away with the tree.")]
 public sealed class PluginTree
 {
     private readonly List<PluginTreeNode> _branches;

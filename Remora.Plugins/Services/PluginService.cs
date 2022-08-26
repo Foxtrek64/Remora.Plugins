@@ -46,10 +46,28 @@ public sealed class PluginService
     /// <summary>
     /// Initializes a new instance of the <see cref="PluginService"/> class.
     /// </summary>
-    /// <param name="options">The service options.</param>
-    public PluginService(IOptions<PluginServiceOptions> options)
+    public PluginService()
+        : this(PluginServiceOptions.Default)
     {
-        _options = options.Value;
+    }
+
+    /// <summary>
+    /// Initializes a new instance of the <see cref="PluginService"/> class.
+    /// </summary>
+    /// <param name="options">The service options, wrapped in an <see cref="IOptions{TOptions}"/>.</param>
+    [Obsolete("Prefer overload which accepts PluginServiceOptions directly.")]
+    public PluginService(IOptions<PluginServiceOptions> options)
+        : this(options.Value)
+    {
+    }
+
+    /// <summary>
+    /// Initializes a new instance of the <see cref="PluginService"/> class.
+    /// </summary>
+    /// <param name="options">The service options.</param>
+    public PluginService(PluginServiceOptions options)
+    {
+        _options = options;
     }
 
     /// <summary>
@@ -59,6 +77,7 @@ public sealed class PluginService
     /// </summary>
     /// <returns>The dependency tree.</returns>
     [PublicAPI, Pure]
+    [Obsolete("Plugin trees aren't used anymore.")]
     public PluginTree LoadPluginTree()
     {
         var pluginAssemblies = LoadAvailablePluginAssemblies().ToList();
@@ -139,11 +158,6 @@ public sealed class PluginService
     /// <summary>
     /// Loads all available plugins into a flat list.
     /// </summary>
-    /// <remarks>
-    /// This method should generally not be used for actually loading plugins into your application, since it may not
-    /// properly order plugins in more complex dependency graphs. Prefer using <see cref="LoadPluginTree"/> and its
-    /// associated methods.
-    /// </remarks>
     /// <returns>The descriptors of the available plugins.</returns>
     [Pure]
     public IEnumerable<IPluginDescriptor> LoadPlugins()
@@ -186,7 +200,7 @@ public sealed class PluginService
     [Pure]
     private static Result<IPluginDescriptor> LoadPluginDescriptor(Assembly assembly)
     {
-        var pluginAttribute = assembly.GetCustomAttribute<RemoraPlugin>();
+        var pluginAttribute = assembly.GetCustomAttribute<RemoraPluginAttribute>();
         if (pluginAttribute is null)
         {
             return new AssemblyIsNotPluginError();
@@ -216,7 +230,7 @@ public sealed class PluginService
     /// </summary>
     /// <returns>The available assemblies.</returns>
     [Pure]
-    private IEnumerable<(RemoraPlugin PluginAttribute, Assembly PluginAssembly)> LoadAvailablePluginAssemblies()
+    private IEnumerable<(RemoraPluginAttribute PluginAttribute, Assembly PluginAssembly)> LoadAvailablePluginAssemblies()
     {
         var searchPaths = new List<string>();
 
@@ -257,7 +271,7 @@ public sealed class PluginService
                 continue;
             }
 
-            var pluginAttribute = assembly.GetCustomAttribute<RemoraPlugin>();
+            var pluginAttribute = assembly.GetCustomAttribute<RemoraPluginAttribute>();
             if (pluginAttribute is null)
             {
                 continue;
