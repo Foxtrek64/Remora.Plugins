@@ -42,23 +42,16 @@ public sealed class PluginService : IDisposable
 {
     private readonly PluginServiceOptions _options;
     private readonly PluginLoader _pluginLoader;
-    private readonly PluginServiceProviderList _pluginServiceProviderList;
 
     // So the plugin Descriptors can be disposed of when trying to unload plugins.
     private readonly Dictionary<string, IPluginDescriptor> _pluginDescriptors;
-    private readonly Action<Result> _errorDelegate;
-    private FileSystemWatcher? _fileSystemWatcher;
+    private FileSystemWatcher _fileSystemWatcher;
 
     /// <summary>
     /// Initializes a new instance of the <see cref="PluginService"/> class.
     /// </summary>
-    /// <param name="applicationProvider">
-    /// The application's service provider.
-    /// This is for fallback when all of the plugin providers do not contain a particular service.
-    /// </param>
-    /// <param name="errorDelegate">The delegate used to process plugin initialization or migration errors.</param>
-    public PluginService(IServiceProvider applicationProvider, Action<Result> errorDelegate)
-        : this(PluginServiceOptions.Default, applicationProvider, errorDelegate)
+    public PluginService()
+        : this(PluginServiceOptions.Default)
     {
     }
 
@@ -68,14 +61,9 @@ public sealed class PluginService : IDisposable
     /// <param name="options">
     /// The service options, wrapped in an <see cref="IOptions{TOptions}"/>.
     /// </param>
-    /// <param name="applicationProvider">
-    /// The application's service provider.
-    /// This is for fallback when all of the plugin providers do not contain a particular service.
-    /// </param>
-    /// <param name="errorDelegate">The delegate used to process plugin initialization or migration errors.</param>
     [Obsolete("Prefer overload which accepts PluginServiceOptions directly.")]
-    public PluginService(IOptions<PluginServiceOptions> options, IServiceProvider applicationProvider, Action<Result> errorDelegate)
-        : this(options.Value, applicationProvider, errorDelegate)
+    public PluginService(IOptions<PluginServiceOptions> options)
+        : this(options.Value)
     {
     }
 
@@ -85,46 +73,23 @@ public sealed class PluginService : IDisposable
     /// <param name="options">
     /// The service options.
     /// </param>
-    /// <param name="applicationProvider">
-    /// The application's service provider.
-    /// This is for fallback when all of the plugin providers do not contain a particular service.
-    /// </param>
-    /// <param name="errorDelegate">The delegate used to process plugin initialization or migration errors.</param>
-    public PluginService(PluginServiceOptions options, IServiceProvider applicationProvider, Action<Result> errorDelegate)
+    public PluginService(PluginServiceOptions options)
     {
         _options = options;
         _pluginLoader = new PluginLoader();
         _pluginDescriptors = new Dictionary<string, IPluginDescriptor>();
-        _pluginServiceProviderList = new PluginServiceProviderList(applicationProvider);
-        _errorDelegate = errorDelegate;
-    }
-
-    /// <summary>
-    /// Loads all available plugins with a specific filter and watches them for any changes.
-    /// </summary>
-    /// <param name="filter">The filter for files to watch within the watcher.</param>
-    public void LoadPlugins(string filter)
-    {
-        var entryAssemblyPath = Assembly.GetEntryAssembly()?.Location;
-        var path = string.Empty;
-        if (entryAssemblyPath is not null)
-        {
-            var installationDirectory = Directory.GetParent(entryAssemblyPath)
-                                        ?? throw new InvalidOperationException();
-            path = installationDirectory.FullName;
-        }
-        _fileSystemWatcher = new FileSystemWatcher(path, filter)
+        _fileSystemWatcher = new FileSystemWatcher(GetApplicationDirectory(), _options.Filter)
         {
             EnableRaisingEvents = true,
             IncludeSubdirectories = true,
             NotifyFilter = NotifyFilters.Attributes
-                | NotifyFilters.CreationTime
-                | NotifyFilters.DirectoryName
-                | NotifyFilters.FileName
-                | NotifyFilters.LastAccess
-                | NotifyFilters.LastWrite
-                | NotifyFilters.Security
-                | NotifyFilters.Size,
+                           | NotifyFilters.CreationTime
+                           | NotifyFilters.DirectoryName
+                           | NotifyFilters.FileName
+                           | NotifyFilters.LastAccess
+                           | NotifyFilters.LastWrite
+                           | NotifyFilters.Security
+                           | NotifyFilters.Size,
         };
         _fileSystemWatcher.Changed += (_, e) =>
         {
@@ -133,12 +98,20 @@ public sealed class PluginService : IDisposable
 
             // Load new one.
             LoadPlugin(e.FullPath, out var result);
-            _errorDelegate(result);
+            if (!result.IsSuccess)
+            {
+                _options.ErrorDelegate?.Invoke(result);
+            }
         };
         _fileSystemWatcher.Created += (_, e) =>
-
+        {
             // Load Plugin (file created).
-            LoadPlugin(e.FullPath, out var _);
+            LoadPlugin(e.FullPath, out var result);
+            if (!result.IsSuccess)
+            {
+                _options.ErrorDelegate?.Invoke(result);
+            }
+        };
         _fileSystemWatcher.Deleted += (_, e) =>
         {
             // Unload plugin (file deleted).
@@ -151,13 +124,26 @@ public sealed class PluginService : IDisposable
 
             // Load new one.
             LoadPlugin(e.FullPath, out var result);
-            _errorDelegate(result);
+            if (!result.IsSuccess)
+            {
+                _options.ErrorDelegate?.Invoke(result);
+            }
         };
+    }
+
+    /// <summary>
+    /// Loads all available plugins with a specific filter and watches them for any changes.
+    /// </summary>
+    public void LoadPlugins()
+    {
         var assemblyPaths = GetPluginAssemblyPaths();
         foreach (var assemblyPath in assemblyPaths)
         {
             LoadPlugin(assemblyPath, out var result);
-            _errorDelegate(result);
+            if (!result.IsSuccess)
+            {
+                _options.ErrorDelegate?.Invoke(result);
+            }
         }
     }
 
@@ -174,22 +160,12 @@ public sealed class PluginService : IDisposable
     private IEnumerable<string> GetPluginAssemblyPaths()
     {
         var searchPaths = new List<string>();
-
         if (_options.ScanAssemblyDirectory)
         {
-            var entryAssemblyPath = Assembly.GetEntryAssembly()?.Location;
-
-            if (entryAssemblyPath is not null)
-            {
-                var installationDirectory = Directory.GetParent(entryAssemblyPath)
-                                            ?? throw new InvalidOperationException();
-
-                searchPaths.Add(installationDirectory.FullName);
-            }
+            searchPaths.Add(GetApplicationDirectory());
         }
 
         searchPaths.AddRange(_options.PluginSearchPaths);
-
         return searchPaths.Select
         (
             searchPath => Directory.EnumerateFiles
@@ -221,7 +197,7 @@ public sealed class PluginService : IDisposable
             result = Result.FromSuccess();
             return;
         }
-        _pluginServiceProviderList.CreateProvider(
+        PluginServiceProvider.Default.CreateServiceProvider(
             Path.GetFileNameWithoutExtension(assemblyPath),
             descriptor.Services);
         var startResult = descriptor.StartAsync().GetAwaiter().GetResult();
@@ -257,13 +233,26 @@ public sealed class PluginService : IDisposable
         pluginDescriptor?.DisposeAsync().GetAwaiter().GetResult();
 
         // first dispose of the plugin's created service provider.
-        _pluginServiceProviderList.DisposeProvider(pluginName);
+        PluginServiceProvider.Default.DisposeServiceProvider(pluginName);
 
         // now we unload the plugin.
         _pluginLoader.UnloadPlugin(pluginName);
     }
 
+    private static string GetApplicationDirectory()
+    {
+        var entryAssemblyPath = Assembly.GetEntryAssembly()?.Location;
+        if (entryAssemblyPath is null)
+        {
+            return string.Empty;
+        }
+
+        var installationDirectory = Directory.GetParent(entryAssemblyPath)
+                                    ?? throw new InvalidOperationException();
+        return installationDirectory.FullName;
+    }
+
     /// <inheritdoc />
     public void Dispose()
-        => _fileSystemWatcher?.Dispose();
+        => _fileSystemWatcher.Dispose();
 }
