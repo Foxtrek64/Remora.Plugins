@@ -25,7 +25,6 @@ using System.Collections.Generic;
 using System.IO;
 using System.Linq;
 using System.Reflection;
-using System.Threading.Tasks;
 using JetBrains.Annotations;
 using Microsoft.Extensions.Options;
 using Remora.Plugins.Abstractions;
@@ -47,6 +46,7 @@ public sealed class PluginService : IDisposable
 
     // So the plugin Descriptors can be disposed of when trying to unload plugins.
     private readonly Dictionary<string, IPluginDescriptor> _pluginDescriptors;
+    private readonly Action<Result> _errorDelegate;
     private FileSystemWatcher? _fileSystemWatcher;
 
     /// <summary>
@@ -56,8 +56,9 @@ public sealed class PluginService : IDisposable
     /// The application's service provider.
     /// This is for fallback when all of the plugin providers do not contain a particular service.
     /// </param>
-    public PluginService(IServiceProvider applicationProvider)
-        : this(PluginServiceOptions.Default, applicationProvider)
+    /// <param name="errorDelegate">The delegate used to process plugin initialization or migration errors.</param>
+    public PluginService(IServiceProvider applicationProvider, Action<Result> errorDelegate)
+        : this(PluginServiceOptions.Default, applicationProvider, errorDelegate)
     {
     }
 
@@ -71,9 +72,10 @@ public sealed class PluginService : IDisposable
     /// The application's service provider.
     /// This is for fallback when all of the plugin providers do not contain a particular service.
     /// </param>
+    /// <param name="errorDelegate">The delegate used to process plugin initialization or migration errors.</param>
     [Obsolete("Prefer overload which accepts PluginServiceOptions directly.")]
-    public PluginService(IOptions<PluginServiceOptions> options, IServiceProvider applicationProvider)
-        : this(options.Value, applicationProvider)
+    public PluginService(IOptions<PluginServiceOptions> options, IServiceProvider applicationProvider, Action<Result> errorDelegate)
+        : this(options.Value, applicationProvider, errorDelegate)
     {
     }
 
@@ -87,12 +89,14 @@ public sealed class PluginService : IDisposable
     /// The application's service provider.
     /// This is for fallback when all of the plugin providers do not contain a particular service.
     /// </param>
-    public PluginService(PluginServiceOptions options, IServiceProvider applicationProvider)
+    /// <param name="errorDelegate">The delegate used to process plugin initialization or migration errors.</param>
+    public PluginService(PluginServiceOptions options, IServiceProvider applicationProvider, Action<Result> errorDelegate)
     {
         _options = options;
         _pluginLoader = new PluginLoader();
         _pluginDescriptors = new Dictionary<string, IPluginDescriptor>();
         _pluginServiceProviderList = new PluginServiceProviderList(applicationProvider);
+        _errorDelegate = errorDelegate;
     }
 
     /// <summary>
@@ -125,61 +129,35 @@ public sealed class PluginService : IDisposable
         _fileSystemWatcher.Changed += (_, e) =>
         {
             // Unload old plugin (file changed).
-            _pluginDescriptors.TryGetValue(
-                Path.GetFileNameWithoutExtension(e.FullPath),
-                out var pluginDescriptor);
-            _pluginDescriptors.Remove(
-                Path.GetFileNameWithoutExtension(e.FullPath));
-            UnloadPlugin(
-                Path.GetFileNameWithoutExtension(e.FullPath),
-                pluginDescriptor);
+            UnloadPlugin(Path.GetFileNameWithoutExtension(e.FullPath));
 
             // Load new one.
-            _pluginDescriptors.Add(
-                Path.GetFileNameWithoutExtension(e.FullPath),
-                LoadPlugin(e.FullPath).Entity);
+            LoadPlugin(e.FullPath, out var result);
+            _errorDelegate(result);
         };
         _fileSystemWatcher.Created += (_, e) =>
 
             // Load Plugin (file created).
-            _pluginDescriptors.Add(
-                Path.GetFileNameWithoutExtension(e.FullPath),
-                LoadPlugin(e.FullPath).Entity);
+            LoadPlugin(e.FullPath, out var _);
         _fileSystemWatcher.Deleted += (_, e) =>
         {
             // Unload plugin (file deleted).
-            _pluginDescriptors.TryGetValue(
-                Path.GetFileNameWithoutExtension(e.FullPath),
-                out var pluginDescriptor);
-            _pluginDescriptors.Remove(
-                Path.GetFileNameWithoutExtension(e.FullPath));
-            UnloadPlugin(
-                Path.GetFileNameWithoutExtension(e.FullPath),
-                pluginDescriptor);
+            UnloadPlugin(Path.GetFileNameWithoutExtension(e.FullPath));
         };
         _fileSystemWatcher.Renamed += (_, e) =>
         {
             // Unload old plugin (file renamed).
-            _pluginDescriptors.TryGetValue(
-                Path.GetFileNameWithoutExtension(e.OldFullPath),
-                out var pluginDescriptor);
-            _pluginDescriptors.Remove(
-                Path.GetFileNameWithoutExtension(e.OldFullPath));
-            UnloadPlugin(
-                Path.GetFileNameWithoutExtension(e.OldFullPath),
-                pluginDescriptor);
+            UnloadPlugin(Path.GetFileNameWithoutExtension(e.OldFullPath));
 
             // Load new one.
-            _pluginDescriptors.Add(
-                Path.GetFileNameWithoutExtension(e.FullPath),
-                LoadPlugin(e.FullPath).Entity);
+            LoadPlugin(e.FullPath, out var result);
+            _errorDelegate(result);
         };
         var assemblyPaths = GetPluginAssemblyPaths();
         foreach (var assemblyPath in assemblyPaths)
         {
-            _pluginDescriptors.Add(
-                Path.GetFileNameWithoutExtension(assemblyPath),
-                LoadPlugin(assemblyPath).Entity);
+            LoadPlugin(assemblyPath, out var result);
+            _errorDelegate(result);
         }
     }
 
@@ -229,11 +207,8 @@ public sealed class PluginService : IDisposable
     /// <param name="assemblyPath">
     /// The path to the plugin assembly to load.
     /// </param>
-    /// <returns>
-    /// The loaded plugin's descriptor instance.
-    /// </returns>
-    [Pure]
-    private Result<IPluginDescriptor> LoadPlugin(string assemblyPath)
+    /// <param name="result">The result of loading the plugin.</param>
+    private void LoadPlugin(string assemblyPath, out Result result)
     {
         RemoraPluginAttribute pluginAttribute;
         (pluginAttribute, _) = _pluginLoader.LoadPlugin(assemblyPath);
@@ -243,27 +218,41 @@ public sealed class PluginService : IDisposable
         );
         if (descriptor is null)
         {
-            return default;
+            result = Result.FromSuccess();
+            return;
         }
         _pluginServiceProviderList.CreateProvider(
             Path.GetFileNameWithoutExtension(assemblyPath),
             descriptor.Services);
-        var startResult = Task.Run(() => descriptor.StartAsync()).GetAwaiter().GetResult();
-        if (!startResult.IsSuccess)
+        var startResult = descriptor.StartAsync().GetAwaiter().GetResult();
+        if (!startResult.Result.IsSuccess)
         {
-            return new PluginInitializationFailed(descriptor, startResult.Error.Message);
+            result = new PluginInitializationFailed(descriptor, startResult.Result.Error.Message);
+            return;
         }
 
-        return Result<IPluginDescriptor>.FromSuccess(descriptor);
+        var migrateResult = startResult.Migration.Invoke(default).GetAwaiter().GetResult();
+        if (!migrateResult.IsSuccess)
+        {
+            result = new PluginMigrationFailed(descriptor, migrateResult.Error.Message);
+        }
+
+        _pluginDescriptors.Add(
+            Path.GetFileNameWithoutExtension(assemblyPath),
+            descriptor);
+        result = Result.FromSuccess();
     }
 
     /// <summary>
     /// Unloads a specific plugin and it's services.
     /// </summary>
     /// <param name="pluginName">The plugin to unload.</param>
-    /// <param name="pluginDescriptor">The plugin's descriptor.</param>
-    private void UnloadPlugin(string pluginName, IPluginDescriptor? pluginDescriptor)
+    private void UnloadPlugin(string pluginName)
     {
+        _pluginDescriptors.TryGetValue(
+            pluginName,
+            out var pluginDescriptor);
+        _pluginDescriptors.Remove(pluginName);
         pluginDescriptor?.StopAsync().GetAwaiter().GetResult();
         pluginDescriptor?.DisposeAsync().GetAwaiter().GetResult();
 

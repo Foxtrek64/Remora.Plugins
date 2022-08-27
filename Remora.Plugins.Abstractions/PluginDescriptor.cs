@@ -26,7 +26,6 @@ using System.Threading;
 using System.Threading.Tasks;
 using JetBrains.Annotations;
 using Microsoft.Extensions.DependencyInjection;
-using Remora.Results;
 
 namespace Remora.Plugins.Abstractions;
 
@@ -49,7 +48,7 @@ public abstract class PluginDescriptor : IPluginDescriptor
     public virtual Version Version => Assembly.GetAssembly(GetType())?.GetName().Version ?? new Version(1, 0, 0);
 
     /// <inheritdoc/>
-    public abstract Task<Result> StartAsync(CancellationToken ct = default);
+    public abstract Task<StartResult> StartAsync(CancellationToken ct = default);
 
     /// <inheritdoc/>
     public abstract Task StopAsync(CancellationToken ct = default);
