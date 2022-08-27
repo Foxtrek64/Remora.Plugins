@@ -125,16 +125,14 @@ public sealed class PluginService : IDisposable
         _fileSystemWatcher.Changed += (_, e) =>
         {
             // Unload old plugin (file changed).
-            IPluginDescriptor? pluginDescriptor = _pluginDescriptors.GetValueOrDefault(
-                Path.GetFileNameWithoutExtension(e.FullPath));
+            _pluginDescriptors.TryGetValue(
+                Path.GetFileNameWithoutExtension(e.FullPath),
+                out var pluginDescriptor);
             _pluginDescriptors.Remove(
                 Path.GetFileNameWithoutExtension(e.FullPath));
-            Task.Run(async () =>
-            {
-                await pluginDescriptor?.StopAsync()!;
-                pluginDescriptor?.Dispose();
-            }).GetAwaiter().GetResult();
-            UnloadPlugin(Path.GetFileNameWithoutExtension(e.FullPath));
+            UnloadPlugin(
+                Path.GetFileNameWithoutExtension(e.FullPath),
+                pluginDescriptor);
 
             // Load new one.
             _pluginDescriptors.Add(
@@ -150,30 +148,26 @@ public sealed class PluginService : IDisposable
         _fileSystemWatcher.Deleted += (_, e) =>
         {
             // Unload plugin (file deleted).
-            IPluginDescriptor? pluginDescriptor = _pluginDescriptors.GetValueOrDefault(
-                Path.GetFileNameWithoutExtension(e.FullPath));
+            _pluginDescriptors.TryGetValue(
+                Path.GetFileNameWithoutExtension(e.FullPath),
+                out var pluginDescriptor);
             _pluginDescriptors.Remove(
                 Path.GetFileNameWithoutExtension(e.FullPath));
-            Task.Run(async () =>
-            {
-                await pluginDescriptor?.StopAsync()!;
-                pluginDescriptor?.Dispose();
-            }).GetAwaiter().GetResult();
-            UnloadPlugin(Path.GetFileNameWithoutExtension(e.FullPath));
+            UnloadPlugin(
+                Path.GetFileNameWithoutExtension(e.FullPath),
+                pluginDescriptor);
         };
         _fileSystemWatcher.Renamed += (_, e) =>
         {
             // Unload old plugin (file renamed).
-            IPluginDescriptor? pluginDescriptor = _pluginDescriptors.GetValueOrDefault(
-                Path.GetFileNameWithoutExtension(e.OldFullPath));
+            _pluginDescriptors.TryGetValue(
+                Path.GetFileNameWithoutExtension(e.OldFullPath),
+                out var pluginDescriptor);
             _pluginDescriptors.Remove(
                 Path.GetFileNameWithoutExtension(e.OldFullPath));
-            Task.Run(async () =>
-            {
-                await pluginDescriptor?.StopAsync()!;
-                pluginDescriptor?.Dispose();
-            }).GetAwaiter().GetResult();
-            UnloadPlugin(Path.GetFileNameWithoutExtension(e.OldFullPath));
+            UnloadPlugin(
+                Path.GetFileNameWithoutExtension(e.OldFullPath),
+                pluginDescriptor);
 
             // Load new one.
             _pluginDescriptors.Add(
@@ -267,12 +261,12 @@ public sealed class PluginService : IDisposable
     /// Unloads a specific plugin and it's services.
     /// </summary>
     /// <param name="pluginName">The plugin to unload.</param>
-    /// <remarks>
-    /// Note: Unload the Plugin's Descriptor before calling this
-    /// otherwise unloading the plugin might fail.
-    /// </remarks>
-    private void UnloadPlugin(string pluginName)
+    /// <param name="pluginDescriptor">The plugin's descriptor.</param>
+    private void UnloadPlugin(string pluginName, IPluginDescriptor? pluginDescriptor)
     {
+        pluginDescriptor?.StopAsync().GetAwaiter().GetResult();
+        pluginDescriptor?.DisposeAsync().GetAwaiter().GetResult();
+
         // first dispose of the plugin's created service provider.
         _pluginServiceProviderList.DisposeProvider(pluginName);
 

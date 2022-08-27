@@ -24,7 +24,9 @@ using System;
 using System.Collections.Generic;
 using System.Diagnostics;
 using System.IO;
+#if NET6_0_OR_GREATER
 using System.Linq;
+#endif
 using System.Reflection;
 using Remora.Plugins.Abstractions.Attributes;
 #if NET6_0_OR_GREATER
