@@ -74,12 +74,24 @@ internal class PluginLoader
                 return getFromDefaultContext(assemblyName.FullName);
             }
 
-            var assemblyPath = _resolver.ResolveAssemblyToPath(assemblyName);
-            return (assemblyPath is not null, !File.Exists($"{AppContext.BaseDirectory}{assemblyName.Name}.dll")) switch
+            var assemblyPath = $"{AppContext.BaseDirectory}{assemblyName.Name}.dll";
+            var (asmBytes, pdbBytes) = OpenAssemblyFiles(
+                assemblyPath,
+                assemblyPath.Replace(
+                    ".dll",
+                    ".pdb",
+                    StringComparison.OrdinalIgnoreCase));
+            using MemoryStream ms1 = new(asmBytes!);
+
+            // optional debug symbols as a pdb file (useful for debugging plugins with a debugger).
+            // normally people embed their pdb's however some people might want to instead have them separate
+            // as portable pdbs. As such we must support that option as well.
+            using MemoryStream? ms2 = Debugger.IsAttached && pdbBytes is not null ? new(pdbBytes) : null;
+            return (!File.Exists(assemblyPath)) switch
             {
-                (false, true) => null,
-                (false, false) => this.LoadFromAssemblyPath($"{AppContext.BaseDirectory}{assemblyName.Name}.dll"),
-                _ => this.LoadFromAssemblyPath(assemblyPath!),
+                // Preferably to only lock assemblies that do not exist under the Application's directory.
+                true => LoadFromAssemblyName(assemblyName),
+                false => LoadFromStream(ms1, ms2),
             };
         }
 
@@ -90,8 +102,8 @@ internal class PluginLoader
             return (libraryPath is not null, !File.Exists($"{AppContext.BaseDirectory}{unmanagedDllName}.dll")) switch
             {
                 (false, true) => IntPtr.Zero,
-                (false, false) => this.LoadUnmanagedDllFromPath($"{AppContext.BaseDirectory}{unmanagedDllName}.dll"),
-                _ => this.LoadUnmanagedDllFromPath(libraryPath!),
+                (false, false) => LoadUnmanagedDllFromPath($"{AppContext.BaseDirectory}{unmanagedDllName}.dll"),
+                _ => LoadUnmanagedDllFromPath(libraryPath!),
             };
         }
     }
@@ -123,7 +135,12 @@ internal class PluginLoader
 
         var domain = AppDomain.CreateDomain(Path.GetFileNameWithoutExtension(assemblyPath));
 #endif
-        var (asmBytes, pdbBytes) = OpenAssemblyFiles(assemblyPath, assemblyPath.Replace(".dll", ".pdb", StringComparison.OrdinalIgnoreCase));
+        var (asmBytes, pdbBytes) = OpenAssemblyFiles(
+            assemblyPath,
+            assemblyPath.Replace(
+                ".dll",
+                ".pdb",
+                StringComparison.OrdinalIgnoreCase));
         Assembly assembly;
 #if NET6_0_OR_GREATER
         using MemoryStream ms1 = new(asmBytes!);
