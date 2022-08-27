@@ -28,16 +28,12 @@ public sealed class MyPlugin : PluginDescriptor
     public override string Description => "My plugin that does a thing.";
 
     /// <inheritdoc/>
-    public override Result ConfigureServices(IServiceCollection serviceCollection)
-    {
-        serviceCollection
+    public override IServiceCollection Services
+        => new ServiceCollection()
             .AddScoped<MyService>();
 
-        return Result.FromSuccess();
-    }
-
     /// <inheritdoc />
-    public override async ValueTask<Result> InitializeAsync(IServiceProvider serviceProvider)
+    public override async Task<StartResult> StartAsync(CancellationToken ct = default)
     {
         var myService = serviceProvider.GetRequiredService<MyService>();
         var doThing = await myService.DoTheThingAsync();
@@ -46,7 +42,24 @@ public sealed class MyPlugin : PluginDescriptor
             return doThing;
         }
 
+        // may optionally return an delegate for optional
+        // migrations that can be done.
         return Result.FromSuccess();
+    }
+
+    /// <inheritdoc/>
+    public override Task StopAsync(CancellationToken ct = default)
+    {
+        // Can optionally be used to stop some service here that a plugin may start.
+        return Task.CompletedTask;
+    }
+
+    // optionally dispose resources that might need to be disposed
+    // in the plugin.
+    /// <inheritdoc/>
+    public override void DisposePlugin(bool disposing)
+    {
+        // For this example do nothing.
     }
 }
 ```
@@ -55,35 +68,21 @@ Loading plugins in your application is equally simple. The example below is
 perhaps a little convoluted, but shows the flexibility of the system.
 
 ```c#
-var pluginService = new PluginService();
-
 var serviceCollection = new ServiceCollection()
-    .AddSingleton(pluginService);
+    .AddSingleton<PluginService>(
+        serviceProvider => new PluginService(
+            serviceProvider,
+            (result) =>
+            {
+                Console.WriteLine($"Error in plugin Initialization or Migration: {result.Error.Message}");
+            }));
 
-var pluginTree = pluginService.LoadPluginTree();
-var configurePlugins = pluginTree.ConfigureServices(serviceCollection);
-if (!configurePlugins.IsSuccess)
-{
-    // check configurePlugins.Error to figure out why
-    return;
-}
+var _services = serviceCollection.BuildServiceProvider();
+var pluginService = _services.GetRequiredService<PluginService>();
 
-_services = serviceCollection.BuildServiceProvider();
-
-var initializePlugins = await pluginTree.InitializeAsync(_services, ct);
-if (!initializePlugins.IsSuccess)
-{
-    // check initializePlugins.Error to figure out why
-    return;
-}
-
-var migratePlugins = await pluginTree.MigrateAsync(_services, ct);
-if (!migratePlugins.IsSuccess)
-{
-    // check migratePlugins.Error to figure out why
-    return;
-}
-
+// Filter the FileSystemWatcher to only watch for plugins with
+// the file name pattern of *.Plugin.dll.
+pluginService.LoadPlugins("*.Plugin.dll");
 ```
 
 Plugins should be designed in such a way that a registration or initialization 
