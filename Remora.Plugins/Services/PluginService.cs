@@ -28,9 +28,7 @@ using System.Reflection;
 using JetBrains.Annotations;
 using Microsoft.Extensions.Options;
 using Remora.Plugins.Abstractions;
-using Remora.Plugins.Abstractions.Attributes;
 using Remora.Plugins.Errors;
-using Remora.Results;
 
 namespace Remora.Plugins.Services;
 
@@ -41,11 +39,15 @@ namespace Remora.Plugins.Services;
 public sealed class PluginService : IDisposable
 {
     private readonly PluginServiceOptions _options;
-    private readonly PluginLoader _pluginLoader;
 
     // So the plugin Descriptors can be disposed of when trying to unload plugins.
-    private readonly Dictionary<string, IPluginDescriptor> _pluginDescriptors;
-    private FileSystemWatcher _fileSystemWatcher;
+    private readonly Dictionary<string, IPluginDescriptor> _pluginDescriptors = new Dictionary<string, IPluginDescriptor>();
+    private readonly FileSystemWatcher _fileSystemWatcher;
+#if NET6_0_OR_GREATER
+    private List<PluginLoadContext> _contexts = new();
+#else
+    private List<AppDomain> _domains = new();
+#endif
 
     /// <summary>
     /// Initializes a new instance of the <see cref="PluginService"/> class.
@@ -76,8 +78,6 @@ public sealed class PluginService : IDisposable
     public PluginService(PluginServiceOptions options)
     {
         _options = options;
-        _pluginLoader = new PluginLoader();
-        _pluginDescriptors = new Dictionary<string, IPluginDescriptor>();
         _fileSystemWatcher = new FileSystemWatcher(GetApplicationDirectory(), _options.Filter)
         {
             EnableRaisingEvents = true,
@@ -97,37 +97,23 @@ public sealed class PluginService : IDisposable
             UnloadPlugin(Path.GetFileNameWithoutExtension(e.FullPath));
 
             // Load new one.
-            LoadPlugin(e.FullPath, out var result);
-            if (!result.IsSuccess)
-            {
-                _options.ErrorDelegate?.Invoke(result);
-            }
+            LoadPlugin(e.FullPath);
         };
         _fileSystemWatcher.Created += (_, e) =>
-        {
+
             // Load Plugin (file created).
-            LoadPlugin(e.FullPath, out var result);
-            if (!result.IsSuccess)
-            {
-                _options.ErrorDelegate?.Invoke(result);
-            }
-        };
+            LoadPlugin(e.FullPath);
         _fileSystemWatcher.Deleted += (_, e) =>
-        {
+
             // Unload plugin (file deleted).
             UnloadPlugin(Path.GetFileNameWithoutExtension(e.FullPath));
-        };
         _fileSystemWatcher.Renamed += (_, e) =>
         {
             // Unload old plugin (file renamed).
             UnloadPlugin(Path.GetFileNameWithoutExtension(e.OldFullPath));
 
             // Load new one.
-            LoadPlugin(e.FullPath, out var result);
-            if (!result.IsSuccess)
-            {
-                _options.ErrorDelegate?.Invoke(result);
-            }
+            LoadPlugin(e.FullPath);
         };
     }
 
@@ -139,11 +125,7 @@ public sealed class PluginService : IDisposable
         var assemblyPaths = GetPluginAssemblyPaths();
         foreach (var assemblyPath in assemblyPaths)
         {
-            LoadPlugin(assemblyPath, out var result);
-            if (!result.IsSuccess)
-            {
-                _options.ErrorDelegate?.Invoke(result);
-            }
+            LoadPlugin(assemblyPath);
         }
     }
 
@@ -171,7 +153,7 @@ public sealed class PluginService : IDisposable
             searchPath => Directory.EnumerateFiles
             (
                 searchPath,
-                "*.dll",
+                _options.Filter,
                 SearchOption.AllDirectories
             )
         ).SelectMany(a => a);
@@ -183,40 +165,49 @@ public sealed class PluginService : IDisposable
     /// <param name="assemblyPath">
     /// The path to the plugin assembly to load.
     /// </param>
-    /// <param name="result">The result of loading the plugin.</param>
-    private void LoadPlugin(string assemblyPath, out Result result)
+    private void LoadPlugin(string assemblyPath)
     {
-        RemoraPluginAttribute pluginAttribute;
-        (pluginAttribute, _) = _pluginLoader.LoadPlugin(assemblyPath);
+        var pluginAttribute = PluginLoadContext.LoadPlugin(
+            assemblyPath,
+#if NET6_0_OR_GREATER
+            ref _contexts
+#else
+            ref _domains
+#endif
+        );
         var descriptor = (IPluginDescriptor?)Activator.CreateInstance
         (
             pluginAttribute.PluginDescriptor
         );
         if (descriptor is null)
         {
-            result = Result.FromSuccess();
             return;
         }
+
         PluginServiceProvider.Default.CreateServiceProvider(
             Path.GetFileNameWithoutExtension(assemblyPath),
             descriptor.Services);
         var startResult = descriptor.StartAsync().GetAwaiter().GetResult();
         if (!startResult.Result.IsSuccess)
         {
-            result = new PluginInitializationFailed(descriptor, startResult.Result.Error.Message);
+            _options.ErrorDelegate?.Invoke(
+                new PluginInitializationFailed(
+                    descriptor,
+                    startResult.Result.Error.Message));
             return;
         }
 
         var migrateResult = startResult.Migration.Invoke(default).GetAwaiter().GetResult();
         if (!migrateResult.IsSuccess)
         {
-            result = new PluginMigrationFailed(descriptor, migrateResult.Error.Message);
+            _options.ErrorDelegate?.Invoke(new PluginMigrationFailed(
+                descriptor,
+                migrateResult.Error.Message));
         }
 
         _pluginDescriptors.Add(
             Path.GetFileNameWithoutExtension(assemblyPath),
             descriptor);
-        result = Result.FromSuccess();
     }
 
     /// <summary>
@@ -236,7 +227,14 @@ public sealed class PluginService : IDisposable
         PluginServiceProvider.Default.DisposeServiceProvider(pluginName);
 
         // now we unload the plugin.
-        _pluginLoader.UnloadPlugin(pluginName);
+        PluginLoadContext.UnloadPlugin(
+            pluginName,
+#if NET6_0_OR_GREATER
+            ref _contexts
+#else
+            ref _domains
+#endif
+        );
     }
 
     private static string GetApplicationDirectory()
