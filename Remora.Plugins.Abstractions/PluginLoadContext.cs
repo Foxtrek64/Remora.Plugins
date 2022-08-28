@@ -69,6 +69,7 @@ internal class PluginLoadContext : AssemblyLoadContext
             return getFromDefaultContext(assemblyName.FullName);
         }
 
+        var libraryPath = _resolver.ResolveAssemblyToPath(assemblyName);
         var assemblyPath = $"{AppContext.BaseDirectory}{assemblyName.Name}.dll";
         var (asmBytes, pdbBytes) = OpenAssemblyFiles(
             assemblyPath,
@@ -82,11 +83,13 @@ internal class PluginLoadContext : AssemblyLoadContext
         // normally people embed their pdb's however some people might want to instead have them separate
         // as portable pdbs. As such we must support that option as well.
         using MemoryStream ms2 = Debugger.IsAttached && pdbBytes is not null ? new(pdbBytes) : null!;
-        return (!File.Exists(assemblyPath)) switch
+        return (libraryPath is not null, !File.Exists(assemblyPath)) switch
         {
+            (false, true) => null,
+            (false, false) => LoadFromStream(ms1, ms2),
+
             // Preferably to only lock assemblies that do not exist under the Application's directory.
-            true => LoadFromAssemblyName(assemblyName),
-            false => LoadFromStream(ms1, ms2),
+            _ => LoadFromAssemblyPath(libraryPath!),
         };
     }
 
