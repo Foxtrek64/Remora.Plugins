@@ -37,7 +37,7 @@ public readonly struct StartResult
     /// </summary>
     /// <param name="result">The result.</param>
     /// <param name="migration">The migration delegate.</param>
-    private StartResult(Result result, Func<CancellationToken, Task<Result>> migration)
+    private StartResult(Result result, Func<IServiceProvider, CancellationToken, Task<Result>> migration)
     {
         Result = result;
         Migration = migration;
@@ -51,7 +51,7 @@ public readonly struct StartResult
     /// <summary>
     /// Gets the method used to perform any migrations required by the plugin.
     /// </summary>
-    public Func<CancellationToken, Task<Result>> Migration { get; }
+    public Func<IServiceProvider, CancellationToken, Task<Result>> Migration { get; }
 
     /// <summary>
     /// Converts a Result into a <see cref="StartResult"/>.
@@ -63,7 +63,7 @@ public readonly struct StartResult
     {
         return new(
             result,
-            async (ct) =>
+            async (_, ct) =>
             {
                 await Task.Delay(0, ct);
                 return Result.FromSuccess();
@@ -75,7 +75,7 @@ public readonly struct StartResult
     /// </summary>
     /// <param name="migration">The migration delegate.</param>
     /// <returns>The <see cref="StartResult"/>.</returns>
-    public static implicit operator StartResult(Func<CancellationToken, Task<Result>> migration)
+    public static implicit operator StartResult(Func<IServiceProvider, CancellationToken, Task<Result>> migration)
     {
         return new(Result.FromSuccess(), migration);
     }

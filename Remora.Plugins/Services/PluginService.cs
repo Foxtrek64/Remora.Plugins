@@ -197,7 +197,9 @@ public sealed class PluginService : IDisposable
             return;
         }
 
-        var migrateResult = startResult.Migration.Invoke(default).GetAwaiter().GetResult();
+        var migrateResult = startResult.Migration.Invoke(
+            PluginServiceProvider.Default,
+            default).GetAwaiter().GetResult();
         if (!migrateResult.IsSuccess)
         {
             _options.ErrorDelegate?.Invoke(new PluginMigrationFailed(
