@@ -184,7 +184,7 @@ public sealed class PluginService : IDisposable
             return;
         }
 
-        PluginServiceProvider.Default.CreateServiceProvider(
+        PluginServiceProvider.Default.AddServices(
             Path.GetFileNameWithoutExtension(assemblyPath),
             descriptor.Services);
         var startResult = descriptor.StartAsync().GetAwaiter().GetResult();
@@ -226,7 +226,7 @@ public sealed class PluginService : IDisposable
         pluginDescriptor?.DisposeAsync().GetAwaiter().GetResult();
 
         // first dispose of the plugin's created service provider.
-        PluginServiceProvider.Default.DisposeServiceProvider(pluginName);
+        PluginServiceProvider.Default.RemoveServices(pluginName);
 
         // now we unload the plugin.
         PluginLoadContext.UnloadPlugin(

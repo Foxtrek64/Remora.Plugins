@@ -22,6 +22,7 @@
 
 using System;
 using JetBrains.Annotations;
+using LuzFaltex.Extensions.DependencyInjection;
 using Microsoft.Extensions.DependencyInjection;
 
 namespace Remora.Plugins.Abstractions;
@@ -30,7 +31,7 @@ namespace Remora.Plugins.Abstractions;
 /// A service provider factory for plugins. Use in place of the default service provider factory.
 /// </summary>
 [PublicAPI]
-public class PluginServiceProviderFactory : DefaultServiceProviderFactory, IServiceProviderFactory<IServiceCollection>
+public class PluginServiceProviderFactory : MutableServiceProviderFactory
 {
     /// <summary>
     /// Initializes a new instance of the <see cref="PluginServiceProviderFactory"/> class
@@ -50,12 +51,10 @@ public class PluginServiceProviderFactory : DefaultServiceProviderFactory, IServ
     {
     }
 
-    /// <inheritdoc />
+    /// <inheritdoc cref="MutableServiceProviderFactory.CreateServiceProvider" />
     public new IServiceProvider CreateServiceProvider(IServiceCollection containerBuilder)
     {
-        PluginServiceProvider.Default.AddServiceProvider(
-            "Default",
-            base.CreateServiceProvider(containerBuilder));
+        PluginServiceProvider.Default.AddServices("Default", containerBuilder);
 
         // Returns the default plugin service provider.
         return PluginServiceProvider.Default;
