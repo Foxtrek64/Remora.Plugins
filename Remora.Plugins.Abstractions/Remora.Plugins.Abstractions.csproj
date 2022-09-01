@@ -1,4 +1,4 @@
-﻿<Project Sdk="Remora.Sdk/1.0.0-preview6">
+<Project Sdk="Remora.Sdk/1.0.0">
     <PropertyGroup>
         <Version>5.0.0</Version>
         <Description>
@@ -13,6 +13,6 @@
     <ItemGroup>
       <InternalsVisibleTo Include="Remora.Plugins" />
       <PackageReference Include="Microsoft.Extensions.DependencyInjection.Abstractions" Version="6.0.0" />
-      <PackageReference Include="Remora.Results" Version="7.2.1" />
+      <PackageReference Include="Remora.Results" Version="7.2.2" />
     </ItemGroup>
 </Project>
