@@ -28,9 +28,8 @@ public sealed class MyPlugin : PluginDescriptor
     public override string Description => "My plugin that does a thing.";
 
     /// <inheritdoc/>
-    public override IServiceCollection Services
-        => new ServiceCollection()
-            .AddScoped<MyService>();
+    public override IServiceCollection Services { get; } = new ServiceCollection()
+        .AddScoped<MyService>();
 
     /// <inheritdoc />
     public override async Task<StartResult> StartAsync(CancellationToken ct = default)
