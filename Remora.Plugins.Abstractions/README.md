@@ -111,7 +111,7 @@ The following is the current breaking changes in Remora.Plugins (or possible bre
    - Added Optional delegate to the record for when plugin initialization errors or migration errors occur (that way applications using Remora.Plugins can log the errors if they choose to).
    - Added "Filter" to the record to provide a filter into PluginService's FileSystemWatcher.
 - Possibly breaking: When another plugin references a plugin, it may lock it's file which is not desirable.
-- To resolve types added by plugins using DependencyInjection that were registered into their own separate service providers, the application must replace the DefaultServiceProviderFactory with PluginServiceProviderFactory otherwise it will not resolve them and then error when trying to construct services.
+- To resolve types added by plugins using DependencyInjection that were registered into their own separate service providers, the application must replace the DefaultServiceProviderFactory with MutableServiceProviderFactory otherwise it will not resolve them and then error when trying to construct services.
 
 ## Building
 The library does not require anything out of the ordinary to compile.

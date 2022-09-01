@@ -26,6 +26,7 @@ using System.IO;
 using System.Linq;
 using System.Reflection;
 using JetBrains.Annotations;
+using LuzFaltex.Extensions.DependencyInjection;
 using Microsoft.Extensions.Options;
 using Remora.Plugins.Abstractions;
 using Remora.Plugins.Errors;
@@ -184,7 +185,7 @@ public sealed class PluginService : IDisposable
             return;
         }
 
-        PluginServiceProvider.Default.AddServices(
+        MutableServiceProvider.Default?.AddServices(
             Path.GetFileNameWithoutExtension(assemblyPath),
             descriptor.Services);
         var startResult = descriptor.StartAsync().GetAwaiter().GetResult();
@@ -198,7 +199,7 @@ public sealed class PluginService : IDisposable
         }
 
         var migrateResult = startResult.Migration.Invoke(
-            PluginServiceProvider.Default,
+            MutableServiceProvider.Default!,
             default).GetAwaiter().GetResult();
         if (!migrateResult.IsSuccess)
         {
@@ -226,7 +227,7 @@ public sealed class PluginService : IDisposable
         pluginDescriptor?.DisposeAsync().GetAwaiter().GetResult();
 
         // first dispose of the plugin's created service provider.
-        PluginServiceProvider.Default.RemoveServices(pluginName);
+        MutableServiceProvider.Default?.RemoveServices(pluginName);
 
         // now we unload the plugin.
         PluginLoadContext.UnloadPlugin(
