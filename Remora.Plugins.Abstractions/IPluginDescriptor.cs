@@ -25,7 +25,6 @@ using System.Threading;
 using System.Threading.Tasks;
 using JetBrains.Annotations;
 using Microsoft.Extensions.DependencyInjection;
-using Remora.Results;
 
 namespace Remora.Plugins.Abstractions;
 
@@ -33,7 +32,7 @@ namespace Remora.Plugins.Abstractions;
 /// Represents the public API for a plugin.
 /// </summary>
 [PublicAPI]
-public interface IPluginDescriptor
+public interface IPluginDescriptor : IDisposable, IAsyncDisposable
 {
     /// <summary>
     /// Gets the name of the plugin. This name should be unique.
@@ -51,18 +50,21 @@ public interface IPluginDescriptor
     Version Version { get; }
 
     /// <summary>
-    /// Configures services provided by the plugin in the application's service collection.
+    /// Gets the services of the plugin.
     /// </summary>
-    /// <param name="serviceCollection">The service collection.</param>
-    /// <returns>A result that may or may not have succeeded.</returns>
-    Result ConfigureServices(IServiceCollection serviceCollection);
+    IServiceCollection Services { get; }
 
     /// <summary>
     /// Called when the application host is ready to start the plugin.
     /// </summary>
-    /// <param name="ct">Indicates that the start process has been aborted.</param>
-    /// <returns>A result that may or may not have succeeded.</returns>
-    Task<Result> StartAsync(CancellationToken ct = default);
+    /// <param name="ct">
+    /// Indicates that the start process has been aborted.
+    /// </param>
+    /// <returns>
+    /// A special result type that holds the result that may or may not have
+    /// succeeded and the migration delegate to be invoked.
+    /// </returns>
+    Task<StartResult> StartAsync(CancellationToken ct = default);
 
     /// <summary>
     /// Called when the application host is ready to stop the plugin.

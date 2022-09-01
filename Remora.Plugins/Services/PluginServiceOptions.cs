@@ -22,6 +22,7 @@
 
 using System;
 using System.Collections.Generic;
+using Remora.Results;
 
 namespace Remora.Plugins.Services;
 
@@ -32,10 +33,14 @@ namespace Remora.Plugins.Services;
 /// <param name="ScanAssemblyDirectory">
 /// Whether the directory of the entry assembly should be scanned for plugins.
 /// </param>
+/// <param name="Filter">The filter to use to find plugins.</param>
+/// <param name="ErrorDelegate">The delegate used to process plugin initialization or migration errors.</param>
 public record PluginServiceOptions
 (
     IEnumerable<string> PluginSearchPaths,
-    bool ScanAssemblyDirectory = true
+    bool ScanAssemblyDirectory = true,
+    string Filter = "*.dll",
+    Action<Result>? ErrorDelegate = null
 )
 {
     /// <summary>

@@ -26,7 +26,6 @@ using System.Threading;
 using System.Threading.Tasks;
 using JetBrains.Annotations;
 using Microsoft.Extensions.DependencyInjection;
-using Remora.Results;
 
 namespace Remora.Plugins.Abstractions;
 
@@ -34,7 +33,7 @@ namespace Remora.Plugins.Abstractions;
 /// Acts as a base class for plugin descriptors.
 /// </summary>
 [PublicAPI]
-public abstract class PluginDescriptor : IPluginDescriptor, IDisposable, IAsyncDisposable
+public abstract class PluginDescriptor : IPluginDescriptor
 {
     /// <inheritdoc />
     public abstract string Name { get; }
@@ -43,16 +42,13 @@ public abstract class PluginDescriptor : IPluginDescriptor, IDisposable, IAsyncD
     public abstract string Description { get; }
 
     /// <inheritdoc />
-    public virtual Version Version => Assembly.GetAssembly(GetType())?.GetName().Version ?? new Version(1, 0, 0);
+    public abstract IServiceCollection Services { get; }
 
     /// <inheritdoc />
-    public virtual Result ConfigureServices(IServiceCollection serviceCollection)
-    {
-        return Result.FromSuccess();
-    }
+    public virtual Version Version => Assembly.GetAssembly(GetType())?.GetName().Version ?? new Version(1, 0, 0);
 
     /// <inheritdoc/>
-    public abstract Task<Result> StartAsync(CancellationToken ct = default);
+    public abstract Task<StartResult> StartAsync(CancellationToken ct = default);
 
     /// <inheritdoc/>
     public abstract Task StopAsync(CancellationToken ct = default);

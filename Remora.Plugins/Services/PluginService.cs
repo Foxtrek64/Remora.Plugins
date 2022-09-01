@@ -26,12 +26,10 @@ using System.IO;
 using System.Linq;
 using System.Reflection;
 using JetBrains.Annotations;
+using LuzFaltex.Extensions.DependencyInjection;
 using Microsoft.Extensions.Options;
 using Remora.Plugins.Abstractions;
-using Remora.Plugins.Abstractions.Attributes;
 using Remora.Plugins.Errors;
-using Remora.Plugins.Extensions;
-using Remora.Results;
 
 namespace Remora.Plugins.Services;
 
@@ -39,9 +37,18 @@ namespace Remora.Plugins.Services;
 /// Serves functionality related to plugins.
 /// </summary>
 [PublicAPI]
-public sealed class PluginService
+public sealed class PluginService : IDisposable
 {
     private readonly PluginServiceOptions _options;
+
+    // So the plugin Descriptors can be disposed of when trying to unload plugins.
+    private readonly Dictionary<string, IPluginDescriptor> _pluginDescriptors = new Dictionary<string, IPluginDescriptor>();
+    private readonly FileSystemWatcher _fileSystemWatcher;
+#if NET6_0_OR_GREATER
+    private List<PluginLoadContext> _contexts = new();
+#else
+    private List<AppDomain> _domains = new();
+#endif
 
     /// <summary>
     /// Initializes a new instance of the <see cref="PluginService"/> class.
@@ -54,7 +61,9 @@ public sealed class PluginService
     /// <summary>
     /// Initializes a new instance of the <see cref="PluginService"/> class.
     /// </summary>
-    /// <param name="options">The service options, wrapped in an <see cref="IOptions{TOptions}"/>.</param>
+    /// <param name="options">
+    /// The service options, wrapped in an <see cref="IOptions{TOptions}"/>.
+    /// </param>
     [Obsolete("Prefer overload which accepts PluginServiceOptions directly.")]
     public PluginService(IOptions<PluginServiceOptions> options)
         : this(options.Value)
@@ -64,220 +73,187 @@ public sealed class PluginService
     /// <summary>
     /// Initializes a new instance of the <see cref="PluginService"/> class.
     /// </summary>
-    /// <param name="options">The service options.</param>
+    /// <param name="options">
+    /// The service options.
+    /// </param>
     public PluginService(PluginServiceOptions options)
     {
         _options = options;
+        _fileSystemWatcher = new FileSystemWatcher(GetApplicationDirectory(), _options.Filter)
+        {
+            EnableRaisingEvents = true,
+            IncludeSubdirectories = true,
+            NotifyFilter = NotifyFilters.Attributes
+                           | NotifyFilters.CreationTime
+                           | NotifyFilters.DirectoryName
+                           | NotifyFilters.FileName
+                           | NotifyFilters.LastAccess
+                           | NotifyFilters.LastWrite
+                           | NotifyFilters.Security
+                           | NotifyFilters.Size,
+        };
+        _fileSystemWatcher.Changed += (_, e) =>
+        {
+            // Unload old plugin (file changed).
+            UnloadPlugin(Path.GetFileNameWithoutExtension(e.FullPath));
+
+            // Load new one.
+            LoadPlugin(e.FullPath);
+        };
+        _fileSystemWatcher.Created += (_, e) =>
+
+            // Load Plugin (file created).
+            LoadPlugin(e.FullPath);
+        _fileSystemWatcher.Deleted += (_, e) =>
+
+            // Unload plugin (file deleted).
+            UnloadPlugin(Path.GetFileNameWithoutExtension(e.FullPath));
+        _fileSystemWatcher.Renamed += (_, e) =>
+        {
+            // Unload old plugin (file renamed).
+            UnloadPlugin(Path.GetFileNameWithoutExtension(e.OldFullPath));
+
+            // Load new one.
+            LoadPlugin(e.FullPath);
+        };
     }
 
     /// <summary>
-    /// Loads all available plugins into a tree structure, ordered by their topological dependencies. Effectively, this
-    /// means that <see cref="PluginTree.Branches"/> will contain dependency-free plugins, with subsequent
-    /// dependents below them (recursively).
+    /// Loads all available plugins with a specific filter and watches them for any changes.
     /// </summary>
-    /// <returns>The dependency tree.</returns>
-    [PublicAPI, Pure]
-    [Obsolete("Plugin trees aren't used anymore.")]
-    public PluginTree LoadPluginTree()
+    public void LoadPlugins()
     {
-        var pluginAssemblies = LoadAvailablePluginAssemblies().ToList();
-        var pluginsWithDependencies = pluginAssemblies.ToDictionary
-        (
-            a => a.PluginAssembly,
-            a => a.PluginAssembly.GetReferencedAssemblies()
-                .Where(ra => pluginAssemblies.Any(pa => pa.PluginAssembly.FullName == ra.FullName))
-                .Select(ra => pluginAssemblies.First(pa => pa.PluginAssembly.FullName == ra.FullName))
-                .Select(ra => ra.PluginAssembly)
-        );
-
-        bool IsDependency(Assembly assembly, Assembly other)
+        var assemblyPaths = GetPluginAssemblyPaths();
+        foreach (var assemblyPath in assemblyPaths)
         {
-            var dependencies = pluginsWithDependencies[assembly];
-            foreach (var dependency in dependencies)
-            {
-                if (dependency == other)
-                {
-                    return true;
-                }
-
-                if (IsDependency(dependency, other))
-                {
-                    return true;
-                }
-            }
-
-            return false;
-        }
-
-        bool IsDirectDependency(Assembly assembly, Assembly dependency)
-        {
-            var dependencies = pluginsWithDependencies[assembly];
-            return IsDependency(assembly, dependency) && dependencies.All(d => !IsDependency(d, dependency));
-        }
-
-        var tree = new PluginTree();
-        var nodes = new Dictionary<Assembly, PluginTreeNode>();
-
-        var sorted = pluginsWithDependencies.Keys.TopologicalSort(k => pluginsWithDependencies[k]).ToList();
-        while (sorted.Count > 0)
-        {
-            var current = sorted[0];
-            var loadDescriptorResult = LoadPluginDescriptor(current);
-            if (!loadDescriptorResult.IsSuccess)
-            {
-                continue;
-            }
-
-            var node = new PluginTreeNode(loadDescriptorResult.Entity);
-
-            var dependencies = pluginsWithDependencies[current].ToList();
-            if (!dependencies.Any())
-            {
-                // This is a root of a chain
-                tree.AddBranch(node);
-            }
-
-            foreach (var dependency in dependencies)
-            {
-                if (!IsDirectDependency(current, dependency))
-                {
-                    continue;
-                }
-
-                var dependencyNode = nodes[dependency];
-                dependencyNode.AddDependent(node);
-            }
-
-            nodes.Add(current, node);
-            sorted.Remove(current);
-        }
-
-        return tree;
-    }
-
-    /// <summary>
-    /// Loads all available plugins into a flat list.
-    /// </summary>
-    /// <returns>The descriptors of the available plugins.</returns>
-    [Pure]
-    public IEnumerable<IPluginDescriptor> LoadPlugins()
-    {
-        var pluginAssemblies = LoadAvailablePluginAssemblies().ToList();
-        var sorted = pluginAssemblies.TopologicalSort
-        (
-            a => a.PluginAssembly.GetReferencedAssemblies()
-                .Where
-                (
-                    n => pluginAssemblies.Any(pa => pa.PluginAssembly.GetName().FullName == n.FullName)
-                )
-                .Select
-                (
-                    n => pluginAssemblies.First(pa => pa.PluginAssembly.GetName().FullName == n.FullName)
-                )
-        );
-
-        foreach (var pluginAssembly in sorted)
-        {
-            var descriptor = (IPluginDescriptor?)Activator.CreateInstance
-            (
-                pluginAssembly.PluginAttribute.PluginDescriptor
-            );
-
-            if (descriptor is null)
-            {
-                continue;
-            }
-
-            yield return descriptor;
+            LoadPlugin(assemblyPath);
         }
     }
 
     /// <summary>
-    /// Loads the plugin descriptor from the given assembly.
+    /// Gets the search paths to plugin assemblies.
     /// </summary>
-    /// <param name="assembly">The assembly.</param>
-    /// <returns>The plugin descriptor.</returns>
+    /// <returns>
+    /// The search paths to plugin assemblies.
+    /// </returns>
+    /// <exception cref="InvalidOperationException">
+    /// When the parent directory is null.
+    /// </exception>
     [Pure]
-    private static Result<IPluginDescriptor> LoadPluginDescriptor(Assembly assembly)
-    {
-        var pluginAttribute = assembly.GetCustomAttribute<RemoraPluginAttribute>();
-        if (pluginAttribute is null)
-        {
-            return new AssemblyIsNotPluginError();
-        }
-
-        IPluginDescriptor descriptor;
-        try
-        {
-            var createdDescriptor = (IPluginDescriptor?)Activator.CreateInstance(pluginAttribute.PluginDescriptor);
-            if (createdDescriptor is null)
-            {
-                return new InvalidPluginError();
-            }
-
-            descriptor = createdDescriptor;
-        }
-        catch (Exception e)
-        {
-            return e;
-        }
-
-        return Result<IPluginDescriptor>.FromSuccess(descriptor);
-    }
-
-    /// <summary>
-    /// Loads the available plugin assemblies.
-    /// </summary>
-    /// <returns>The available assemblies.</returns>
-    [Pure]
-    private IEnumerable<(RemoraPluginAttribute PluginAttribute, Assembly PluginAssembly)> LoadAvailablePluginAssemblies()
+    private IEnumerable<string> GetPluginAssemblyPaths()
     {
         var searchPaths = new List<string>();
-
         if (_options.ScanAssemblyDirectory)
         {
-            var entryAssemblyPath = Assembly.GetEntryAssembly()?.Location;
-
-            if (entryAssemblyPath is not null)
-            {
-                var installationDirectory = Directory.GetParent(entryAssemblyPath)
-                                            ?? throw new InvalidOperationException();
-
-                searchPaths.Add(installationDirectory.FullName);
-            }
+            searchPaths.Add(GetApplicationDirectory());
         }
 
         searchPaths.AddRange(_options.PluginSearchPaths);
-
-        var assemblyPaths = searchPaths.Select
+        return searchPaths.Select
         (
             searchPath => Directory.EnumerateFiles
             (
                 searchPath,
-                "*.dll",
+                _options.Filter,
                 SearchOption.AllDirectories
             )
         ).SelectMany(a => a);
-
-        foreach (var assemblyPath in assemblyPaths)
-        {
-            Assembly assembly;
-            try
-            {
-                assembly = Assembly.LoadFrom(assemblyPath);
-            }
-            catch
-            {
-                continue;
-            }
-
-            var pluginAttribute = assembly.GetCustomAttribute<RemoraPluginAttribute>();
-            if (pluginAttribute is null)
-            {
-                continue;
-            }
-
-            yield return (pluginAttribute, assembly);
-        }
     }
+
+    /// <summary>
+    /// Loads a specific plugin and it's services.
+    /// </summary>
+    /// <param name="assemblyPath">
+    /// The path to the plugin assembly to load.
+    /// </param>
+    private void LoadPlugin(string assemblyPath)
+    {
+        var pluginAttribute = PluginLoadContext.LoadPlugin(
+            assemblyPath,
+#if NET6_0_OR_GREATER
+            ref _contexts
+#else
+            ref _domains
+#endif
+        );
+        var descriptor = (IPluginDescriptor?)Activator.CreateInstance
+        (
+            pluginAttribute.PluginDescriptor
+        );
+        if (descriptor is null)
+        {
+            return;
+        }
+
+        MutableServiceProvider.Default?.AddServices(
+            Path.GetFileNameWithoutExtension(assemblyPath),
+            descriptor.Services);
+        var startResult = descriptor.StartAsync().GetAwaiter().GetResult();
+        if (!startResult.Result.IsSuccess)
+        {
+            _options.ErrorDelegate?.Invoke(
+                new PluginInitializationFailed(
+                    descriptor,
+                    startResult.Result.Error.Message));
+            return;
+        }
+
+        var migrateResult = startResult.Migration.Invoke(
+            MutableServiceProvider.Default!,
+            default).GetAwaiter().GetResult();
+        if (!migrateResult.IsSuccess)
+        {
+            _options.ErrorDelegate?.Invoke(new PluginMigrationFailed(
+                descriptor,
+                migrateResult.Error.Message));
+        }
+
+        _pluginDescriptors.Add(
+            Path.GetFileNameWithoutExtension(assemblyPath),
+            descriptor);
+    }
+
+    /// <summary>
+    /// Unloads a specific plugin and it's services.
+    /// </summary>
+    /// <param name="pluginName">The plugin to unload.</param>
+    private void UnloadPlugin(string pluginName)
+    {
+        _pluginDescriptors.TryGetValue(
+            pluginName,
+            out var pluginDescriptor);
+        _pluginDescriptors.Remove(pluginName);
+        pluginDescriptor?.StopAsync().GetAwaiter().GetResult();
+        pluginDescriptor?.DisposeAsync().GetAwaiter().GetResult();
+
+        // first dispose of the plugin's created service provider.
+        MutableServiceProvider.Default?.RemoveServices(pluginName);
+
+        // now we unload the plugin.
+        PluginLoadContext.UnloadPlugin(
+            pluginName,
+#if NET6_0_OR_GREATER
+            ref _contexts
+#else
+            ref _domains
+#endif
+        );
+    }
+
+    private static string GetApplicationDirectory()
+    {
+        var entryAssemblyPath = Assembly.GetEntryAssembly()?.Location;
+        if (entryAssemblyPath is null)
+        {
+            return string.Empty;
+        }
+
+        var installationDirectory = Directory.GetParent(entryAssemblyPath)
+                                    ?? throw new InvalidOperationException();
+        return installationDirectory.FullName;
+    }
+
+    /// <inheritdoc />
+    public void Dispose()
+        => _fileSystemWatcher.Dispose();
 }
