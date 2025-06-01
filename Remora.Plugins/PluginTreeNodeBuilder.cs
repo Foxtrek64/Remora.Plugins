@@ -40,16 +40,19 @@ namespace Remora.Plugins
         /// <summary>
         /// Gets the plugin type.
         /// </summary>
+        [PublicAPI]
         public Type PluginType { get; } = pluginType;
 
         /// <summary>
         /// Gets the plugin assembly.
         /// </summary>
+        [PublicAPI]
         public Assembly PluginAssembly { get; } = pluginAssembly;
 
         /// <summary>
         /// Gets the dependents of this plugin node.
         /// </summary>
+        [PublicAPI]
         public List<PluginTreeNodeBuilder> Dependents { get; } = [];
 
         /// <summary>

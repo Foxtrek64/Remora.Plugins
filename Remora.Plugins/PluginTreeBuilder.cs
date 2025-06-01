@@ -51,6 +51,7 @@ namespace Remora.Plugins
         /// <param name="serviceProvider">The service provider.</param>
         /// <returns>A new <see cref="PluginTree"/>.</returns>
         [Pure]
+        [PublicAPI]
         public PluginTree Build(IServiceProvider serviceProvider)
         {
             var tree = new PluginTree();
