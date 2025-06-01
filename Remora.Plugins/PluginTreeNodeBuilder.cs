@@ -72,7 +72,7 @@ namespace Remora.Plugins
         [Pure]
         public PluginTreeNode Build(IServiceProvider services)
         {
-            var plugin = PluginTreeNodeBuilder.BuildPluginDescriptor(services, PluginType);
+            var plugin = BuildPluginDescriptor(services, this.PluginType);
             var node = new PluginTreeNode(plugin);
 
             foreach (var dependent in this.Dependents)
