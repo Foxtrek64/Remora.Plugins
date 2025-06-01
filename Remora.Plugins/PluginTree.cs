@@ -77,10 +77,9 @@ public sealed class PluginTree(List<PluginTreeNode>? branches = null)
     /// <summary>
     /// Migrates any persistent data stores of the plugins in the tree.
     /// </summary>
-    /// <param name="services">The available services.</param>
     /// <param name="ct">The cancellation token for this operation.</param>
     /// <returns>A result which may or may not have succeeded.</returns>
-    public async Task<Result> MigrateAsync(IServiceProvider services, CancellationToken ct = default)
+    public async Task<Result> MigrateAsync(CancellationToken ct = default)
     {
         var results = await WalkAsync
         (
@@ -96,7 +95,7 @@ public sealed class PluginTree(List<PluginTreeNode>? branches = null)
                     return Result.FromSuccess();
                 }
 
-                return await migratablePlugin.MigrateAsync(services, c);
+                return await migratablePlugin.MigrateAsync(c);
             },
             ct: ct
         ).ToListAsync(ct);

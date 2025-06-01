@@ -62,15 +62,16 @@ var serviceCollection = new ServiceCollection();
 var pluginTreeBuilder = pluginService.LoadPluginTree(serviceCollection, filter: plugin => plugin.Name.Length > 3);
 
 _services = serviceCollection.BuildServiceProvider();
+var pluginTree = pluginTreeBuilder.Build(_services);
 
-var initializePlugins = await pluginTreeBuilder.InitializeAsync(_services, ct);
+var initializePlugins = await pluginTree.InitializeAsync(ct);
 if (!initializePlugins.IsSuccess)
 {
     // check initializePlugins.Error to figure out why
     return;
 }
 
-var migratePlugins = await pluginTreeBuilder.MigrateAsync(_services, ct);
+var migratePlugins = await pluginTree.MigrateAsync(ct);
 if (!migratePlugins.IsSuccess)
 {
     // check migratePlugins.Error to figure out why
