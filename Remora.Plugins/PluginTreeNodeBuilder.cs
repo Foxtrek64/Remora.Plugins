@@ -23,6 +23,7 @@
 using System;
 using System.Collections.Generic;
 using System.Reflection;
+using JetBrains.Annotations;
 using Microsoft.Extensions.DependencyInjection;
 using Remora.Plugins.Abstractions;
 
@@ -33,6 +34,7 @@ namespace Remora.Plugins
     /// </summary>
     /// <param name="pluginAssembly">The assembly the plugin belongs to.</param>
     /// <param name="pluginType">The type of the plugin to construct.</param>
+    [PublicAPI]
     public sealed class PluginTreeNodeBuilder(Assembly pluginAssembly, Type pluginType)
     {
         /// <summary>
@@ -56,7 +58,7 @@ namespace Remora.Plugins
         /// <param name="dependent">The dependent to add.</param>
         public void AddDependent(PluginTreeNodeBuilder dependent)
         {
-            Dependents.Add(dependent);
+            this.Dependents.Add(dependent);
         }
 
         /// <summary>
@@ -64,12 +66,13 @@ namespace Remora.Plugins
         /// </summary>
         /// <param name="services">The service provider used to construct the plugins.</param>
         /// <returns>A newly constructed <see cref="PluginTreeNode"/>.</returns>
+        [Pure]
         public PluginTreeNode Build(IServiceProvider services)
         {
-            var plugin = BuildPluginDescriptor(services, PluginType);
+            var plugin = PluginTreeNodeBuilder.BuildPluginDescriptor(services, PluginType);
             var node = new PluginTreeNode(plugin);
 
-            foreach (var dependent in Dependents)
+            foreach (var dependent in this.Dependents)
             {
                 var dependentPlugin = BuildPluginDescriptor(services, dependent.PluginType);
                 var dependentNode = new PluginTreeNode(dependentPlugin);
@@ -85,6 +88,7 @@ namespace Remora.Plugins
         /// <param name="services">The service provider.</param>
         /// <param name="pluginType">The plugin type.</param>
         /// <returns>The newly constructed <see cref="IPluginDescriptor"/>.</returns>
+        [Pure]
         internal static IPluginDescriptor BuildPluginDescriptor(IServiceProvider services, Type pluginType)
             => (IPluginDescriptor)ActivatorUtilities.CreateInstance(services, pluginType);
     }

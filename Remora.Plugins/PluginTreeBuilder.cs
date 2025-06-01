@@ -22,14 +22,17 @@
 
 using System;
 using System.Collections.Generic;
-using System.Diagnostics.Contracts;
+using JetBrains.Annotations;
+using Remora.Plugins.Abstractions;
 
 namespace Remora.Plugins
 {
     /// <summary>
     /// A type that facilitates the creation of a <see cref="PluginTree"/>.
     /// </summary>
-    public sealed class PluginTreeBuilder
+    /// <param name="filter">A filter predicate which determines if the plugin should be loaded.</param>
+    [PublicAPI]
+    public sealed class PluginTreeBuilder(Predicate<IPluginDescriptor> filter)
     {
         private readonly List<PluginTreeNodeBuilder> _treeNodeBuilders = [];
 
@@ -54,7 +57,10 @@ namespace Remora.Plugins
             foreach (var node in _treeNodeBuilders)
             {
                 var pluginTreeNode = node.Build(serviceProvider);
-                tree.AddBranch(pluginTreeNode);
+                if (filter.Invoke(pluginTreeNode.Plugin))
+                {
+                    tree.AddBranch(pluginTreeNode);
+                }
             }
             return tree;
         }

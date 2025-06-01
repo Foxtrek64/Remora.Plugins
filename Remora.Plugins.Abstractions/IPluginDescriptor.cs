@@ -66,5 +66,5 @@ public interface IPluginDescriptor
     ValueTask<Result> InitializeAsync(CancellationToken ct = default);
 
     /// <inheritdoc cref="object.ToString"/>
-    virtual string ToString() => this.Name;
+    string ToString() => this.Name;
 }

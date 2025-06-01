@@ -48,7 +48,7 @@ public sealed class PluginService(PluginServiceOptions? options = null)
 {
     private readonly PluginServiceOptions _options = options ?? PluginServiceOptions.Default;
 
-    private Dictionary<Assembly, IEnumerable<Type>>? _pluginsByAssembly = null;
+    private Dictionary<Assembly, IEnumerable<Type>>? _pluginsByAssembly;
 
     /// <summary>
     /// Loads all available plugins into a tree structure, ordered by their topological dependencies. Effectively, this
@@ -73,7 +73,7 @@ public sealed class PluginService(PluginServiceOptions? options = null)
         );
 
         // Load plugin dependencies.
-        foreach ((Assembly assembly, IEnumerable<Type> plugins) in _pluginsByAssembly)
+        foreach (IEnumerable<Type> plugins in _pluginsByAssembly.Values)
         {
             MethodInfo configureHelper = typeof(PluginService).GetMethod(nameof(ConfigurePlugin))
                 ?? throw new InvalidOperationException(); // This will never be null.
@@ -85,7 +85,7 @@ public sealed class PluginService(PluginServiceOptions? options = null)
         }
 
         // Build and populate plugin tree.
-        var tree = new PluginTreeBuilder();
+        var tree = new PluginTreeBuilder(filter);
         var nodes = new Dictionary<Assembly, PluginTreeNodeBuilder>();
 
         var sorted = pluginsWithDependencies.Keys.TopologicalSort(k => pluginsWithDependencies[k]).ToList();
@@ -179,14 +179,6 @@ public sealed class PluginService(PluginServiceOptions? options = null)
                 yield return PluginTreeNodeBuilder.BuildPluginDescriptor(services, pluginType);
             }
         }
-
-        static IEnumerable<IPluginDescriptor> BuildPluginDescriptorsForAssembly(IServiceProvider services, IEnumerable<Type> pluginTypes)
-        {
-            foreach (var pluginType in pluginTypes)
-            {
-                yield return PluginTreeNodeBuilder.BuildPluginDescriptor(services, pluginType);
-            }
-        }
     }
 
     private static IServiceCollection ConfigurePlugin<TPluginDescriptor>(IServiceCollection services)
@@ -194,44 +186,9 @@ public sealed class PluginService(PluginServiceOptions? options = null)
         => TPluginDescriptor.ConfigureServices(services);
 
     /// <summary>
-    /// Loads the plugin descriptor from the given assembly.
-    /// </summary>
-    /// <param name="assembly">The assembly.</param>
-    /// <returns>The plugin descriptor.</returns>
-    [Pure]
-    private static Result<IEnumerable<IPluginDescriptor>> LoadPluginDescriptors(Assembly assembly, IEnumerable<Type> plugins)
-    {
-        IPluginDescriptor[] pluginDescriptors = new IPluginDescriptor[plugins.Count()];
-        int index = 0;
-
-        foreach (var plugin in plugins)
-        {
-            try
-            {
-                // TODO: Wire up to service provider.
-                // ActivatorUtilities.CreateInstance(serviceProvider, type)
-                var descriptor = (IPluginDescriptor?)Activator.CreateInstance(plugin);
-                if (descriptor is null)
-                {
-                    return new InvalidPluginError();
-                }
-
-                pluginDescriptors[index++] = descriptor;
-            }
-            catch (Exception e)
-            {
-                return e;
-            }
-        }
-
-        return pluginDescriptors;
-    }
-
-    /// <summary>
     /// Loads the available plugin assemblies.
     /// </summary>
     /// <param name="reload">If <see langword="true"/>, this will empty and re-create the plugins.</param>
-    [Pure]
     [MemberNotNull(nameof(_pluginsByAssembly))]
     private void LoadAvailablePluginAssemblies(bool reload = false)
     {
